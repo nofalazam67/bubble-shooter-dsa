@@ -1,0 +1,4 @@
+# build output - recreate it with code/build.bat
+*.exe
+# local editor settings
+.vscode/

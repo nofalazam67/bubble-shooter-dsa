@@ -1,0 +1,677 @@
+#include <cstdlib>
+#include <ctime>
+#include <iostream>
+using namespace std;
+const int ROWS = 10;
+const int COLS = 10;
+const int QUEUE_SIZE = 10;
+const int STACK_SIZE = 20;
+const int COLORS = 5;
+int board[ROWS][COLS];
+bool visited[ROWS][COLS];
+int score = 0;
+int shotsTaken = 0;
+int currentBubble = 1;
+int nextGameID = 1;
+bool gameActive = false;
+class Queue {
+  public:
+    int bubbles[QUEUE_SIZE];
+    int front;
+    int rear;
+    int count;
+};
+Queue bubbleQueue;
+void initializeQueue() {
+    bubbleQueue.front = 0;
+    bubbleQueue.rear = -1;
+    bubbleQueue.count = 0;
+    for (int i = 0; i < 5; i++) {
+        int color = rand() % COLORS + 1;
+        bubbleQueue.rear = (bubbleQueue.rear + 1) % QUEUE_SIZE;
+        bubbleQueue.bubbles[bubbleQueue.rear] = color;
+        bubbleQueue.count++;
+    }
+}
+bool isQueueEmpty() { return bubbleQueue.count == 0; }
+bool isQueueFull() { return bubbleQueue.count == QUEUE_SIZE; }
+void enqueue(int color) {
+    if (isQueueFull()) {
+        cout << "Queue is full!\n";
+        return;
+    }
+    bubbleQueue.rear = (bubbleQueue.rear + 1) % QUEUE_SIZE;
+    bubbleQueue.bubbles[bubbleQueue.rear] = color;
+    bubbleQueue.count++;
+}
+int dequeue() {
+    if (isQueueEmpty()) {
+        return -1;
+    }
+    int color = bubbleQueue.bubbles[bubbleQueue.front];
+    bubbleQueue.front = (bubbleQueue.front + 1) % QUEUE_SIZE;
+    bubbleQueue.count--;
+    return color;
+}
+int getFront() {
+    if (isQueueEmpty())
+        return -1;
+    return bubbleQueue.bubbles[bubbleQueue.front];
+}
+int generateRandomBubble() { return rand() % COLORS + 1; }
+void displayQueue() {
+    cout << "Upcoming bubbles: ";
+    for (int i = 0; i < bubbleQueue.count; i++) {
+        int index = (bubbleQueue.front + i) % QUEUE_SIZE;
+        cout << bubbleQueue.bubbles[index] << " ";
+    }
+
+    cout << endl;
+}
+class GameState {
+  public:
+    int savedBoard[ROWS][COLS];
+    int savedScore;
+    int savedShots;
+    int savedCurrentBubble;
+    Queue savedQueue;
+};
+class Stack {
+  public:
+    GameState states[STACK_SIZE];
+    int top;
+};
+Stack undoStack;
+void initializeStack() { undoStack.top = -1; }
+bool isStackEmpty() { return undoStack.top == -1; }
+bool isStackFull() { return undoStack.top == STACK_SIZE - 1; }
+void push() {
+    if (isStackFull()) {
+        cout << "Undo history is full!\n";
+        return;
+    }
+    undoStack.top++;
+    GameState &state = undoStack.states[undoStack.top];
+    for (int i = 0; i < ROWS; i++) {
+        for (int j = 0; j < COLS; j++) {
+            state.savedBoard[i][j] = board[i][j];
+        }
+    }
+    state.savedScore = score;
+    state.savedShots = shotsTaken;
+    state.savedCurrentBubble = currentBubble;
+    state.savedQueue = bubbleQueue;
+}
+GameState pop() { return undoStack.states[undoStack.top--]; }
+GameState peek() { return undoStack.states[undoStack.top]; }
+void undoMove() {
+    if (isStackEmpty()) {
+        cout << "Nothing to undo!\n";
+        return;
+    }
+    GameState state = pop();
+    for (int i = 0; i < ROWS; i++) {
+        for (int j = 0; j < COLS; j++) {
+            board[i][j] = state.savedBoard[i][j];
+        }
+    }
+    score = state.savedScore;
+    shotsTaken = state.savedShots;
+    currentBubble = state.savedCurrentBubble;
+    bubbleQueue = state.savedQueue;
+    gameActive = true;
+    cout << "Previous move restored!\n";
+}
+bool isValidCell(int row, int col) { return row >= 0 && row < ROWS && col >= 0 && col < COLS; }
+bool isEmpty(int row, int col) { return board[row][col] == 0; }
+void initializeBoard() {
+    for (int i = 0; i < ROWS; i++) {
+        for (int j = 0; j < COLS; j++) {
+            board[i][j] = 0;
+        }
+    }
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < COLS; j++) {
+            board[i][j] = rand() % COLORS + 1;
+        }
+    }
+}
+void displayBoard() {
+    cout << "\n========== BUBBLE BOARD ==========\n\n";
+    for (int i = 0; i < ROWS; i++) {
+        cout << i << " | ";
+        for (int j = 0; j < COLS; j++) {
+            if (board[i][j] == 0)
+                cout << ". ";
+            else
+                cout << board[i][j] << " ";
+        }
+        cout << endl;
+    }
+    cout << " ";
+    for (int j = 0; j < COLS; j++)
+        cout << j << " ";
+    cout << "\n\n";
+}
+void placeBubble(int row, int col, int color) {
+    if (isValidCell(row, col) && isEmpty(row, col)) {
+        board[row][col] = color;
+    }
+}
+void removeBubble(int row, int col) {
+    if (isValidCell(row, col)) {
+        board[row][col] = 0;
+    }
+}
+bool isBoardEmpty() {
+    for (int i = 0; i < ROWS; i++) {
+        for (int j = 0; j < COLS; j++) {
+            if (board[i][j] != 0)
+                return false;
+        }
+    }
+    return true;
+}
+bool isMatchingColor(int row, int col, int color) {
+    return isValidCell(row, col) && !visited[row][col] && board[row][col] == color;
+}
+int matchRows[ROWS * COLS];
+int matchCols[ROWS * COLS];
+int matchCount = 0;
+void checkConnected(int row, int col, int color) {
+    if (!isMatchingColor(row, col, color))
+        return;
+    visited[row][col] = true;
+    matchRows[matchCount] = row;
+    matchCols[matchCount] = col;
+    matchCount++;
+    checkConnected(row - 1, col, color);
+    checkConnected(row + 1, col, color);
+    checkConnected(row, col - 1, color);
+    checkConnected(row, col + 1, color);
+}
+int findMatches(int row, int col) {
+    for (int i = 0; i < ROWS; i++)
+
+    {
+        for (int j = 0; j < COLS; j++) {
+            visited[i][j] = false;
+        }
+    }
+    matchCount = 0;
+    int color = board[row][col];
+    checkConnected(row, col, color);
+    return matchCount;
+}
+void removeMatches() {
+    for (int i = 0; i < matchCount; i++) {
+        removeBubble(matchRows[i], matchCols[i]);
+    }
+    cout << matchCount << " bubbles removed!\n";
+}
+void processMatches(int row, int col) {
+    int totalMatches = findMatches(row, col);
+    cout << "Connected bubbles: " << totalMatches << endl;
+    if (totalMatches >= 3) {
+        score += totalMatches * 10;
+        removeMatches();
+        cout << "Score updated: " << score << endl;
+    } else {
+        cout << "No matching cluster found.\n";
+    }
+}
+void updateScore(int points) { score += points; }
+int calculateScore(int matches) { return matches * 10; }
+int getHighScore() { return score; }
+void resetScore() { score = 0; }
+bool checkWin() { return isBoardEmpty(); }
+bool checkLose() {
+    for (int j = 0; j < COLS; j++) {
+        if (board[ROWS - 1][j] != 0 || board[ROWS - 2][j] != 0) {
+            return true;
+        }
+    }
+    return false;
+}
+class GameRecord {
+  public:
+    int gameID;
+    int score;
+    int shots;
+    bool won;
+    GameRecord *next;
+};
+GameRecord *head = NULL;
+void insertRecord(int id, int points, int shots, bool result) {
+    GameRecord *newNode = new GameRecord;
+    newNode->gameID = id;
+    newNode->score = points;
+    newNode->shots = shots;
+    newNode->won = result;
+    newNode->next = NULL;
+    if (head == NULL) {
+        head = newNode;
+        return;
+    }
+    GameRecord *temp = head;
+    while (temp->next != NULL) {
+        temp = temp->next;
+    }
+    temp->next = newNode;
+}
+void displayRecords() {
+    if (head == NULL) {
+        cout << "No game records found!\n";
+        return;
+    }
+
+    GameRecord *temp = head;
+    cout << "\n========== GAME HISTORY ==========\n";
+    while (temp != NULL) {
+        cout << "Game ID: " << temp->gameID << " | Score: " << temp->score
+             << " | Shots: " << temp->shots << " | Result: " << (temp->won ? "Win" : "Loss")
+             << endl;
+        temp = temp->next;
+    }
+}
+GameRecord *searchRecord(int id) {
+    GameRecord *temp = head;
+    while (temp != NULL) {
+        if (temp->gameID == id)
+            return temp;
+        temp = temp->next;
+    }
+    return NULL;
+}
+void updateRecord(int id, int newScore) {
+    GameRecord *temp = searchRecord(id);
+    if (temp == NULL) {
+        cout << "Record not found!\n";
+        return;
+    }
+    temp->score = newScore;
+
+    cout << "Record updated!\n";
+}
+void deleteRecord(int id) {
+    if (head == NULL)
+        return;
+    if (head->gameID == id) {
+        GameRecord *temp = head;
+        head = head->next;
+        delete temp;
+        cout << "Record deleted!\n";
+        return;
+    }
+    GameRecord *temp = head;
+    while (temp->next != NULL && temp->next->gameID != id) {
+        temp = temp->next;
+    }
+    if (temp->next == NULL) {
+        cout << "Record not found!\n";
+        return;
+    }
+    GameRecord *del = temp->next;
+    temp->next = del->next;
+    delete del;
+    cout << "Record deleted!\n";
+}
+int countRecords() {
+    int count = 0;
+    GameRecord *temp = head;
+    while (temp != NULL) {
+        count++;
+        temp = temp->next;
+    }
+    return count;
+}
+GameRecord *getMiddle(GameRecord *start) {
+    if (start == NULL)
+
+        return NULL;
+    GameRecord *slow = start;
+    GameRecord *fast = start->next;
+    while (fast != NULL && fast->next != NULL) {
+        slow = slow->next;
+        fast = fast->next->next;
+    }
+    return slow;
+}
+GameRecord *mergeLists(GameRecord *a, GameRecord *b) {
+    if (a == NULL)
+        return b;
+    if (b == NULL)
+        return a;
+    GameRecord *result = NULL;
+    if (a->score >= b->score) {
+        result = a;
+        result->next = mergeLists(a->next, b);
+    } else {
+        result = b;
+        result->next = mergeLists(a, b->next);
+    }
+    return result;
+}
+GameRecord *mergeSort(GameRecord *start) {
+    if (start == NULL || start->next == NULL)
+        return start;
+    GameRecord *middle = getMiddle(start);
+    GameRecord *secondHalf = middle->next;
+    middle->next = NULL;
+    GameRecord *left = mergeSort(start);
+    GameRecord *right = mergeSort(secondHalf);
+    return mergeLists(left, right);
+}
+void sortRecords() {
+    head = mergeSort(head);
+    cout << "Game records sorted by score!\n";
+}
+class TreeNode {
+  public:
+    int score;
+    int gameID;
+    TreeNode *left;
+    TreeNode *right;
+};
+TreeNode *root = NULL;
+bool comesBefore(int score1, int id1, int score2, int id2) {
+    if (score1 != score2)
+        return score1 < score2;
+    return id1 < id2;
+}
+TreeNode *insertNode(TreeNode *node, int points, int id) {
+    if (node == NULL) {
+        TreeNode *newNode = new TreeNode;
+        newNode->score = points;
+        newNode->gameID = id;
+        newNode->left = NULL;
+        newNode->right = NULL;
+        return newNode;
+    }
+    if (comesBefore(points, id, node->score, node->gameID)) {
+        node->left = insertNode(node->left, points, id);
+    } else {
+        node->right = insertNode(node->right, points, id);
+    }
+    return node;
+}
+TreeNode *searchNode(TreeNode *node, int points, int id) {
+    if (node == NULL)
+        return NULL;
+    if (node->score == points && node->gameID == id)
+        return node;
+    if (comesBefore(points, id, node->score, node->gameID))
+
+        return searchNode(node->left, points, id);
+    return searchNode(node->right, points, id);
+}
+TreeNode *findMin(TreeNode *node) {
+    if (node == NULL)
+        return NULL;
+    while (node->left != NULL) {
+        node = node->left;
+    }
+    return node;
+}
+TreeNode *findMax(TreeNode *node) {
+    if (node == NULL)
+        return NULL;
+    while (node->right != NULL) {
+        node = node->right;
+    }
+    return node;
+}
+void inorder(TreeNode *node) {
+    if (node == NULL)
+        return;
+    inorder(node->left);
+    cout << "Game " << node->gameID << " | Score: " << node->score << endl;
+    inorder(node->right);
+}
+void preorder(TreeNode *node) {
+    if (node == NULL)
+        return;
+    cout << node->score << " ";
+    preorder(node->left);
+    preorder(node->right);
+}
+void postorder(TreeNode *node) {
+    if (node == NULL)
+        return;
+    postorder(node->left);
+
+    postorder(node->right);
+    cout << node->score << " ";
+}
+TreeNode *deleteNode(TreeNode *node, int points, int id) {
+    if (node == NULL)
+        return NULL;
+    if (comesBefore(points, id, node->score, node->gameID)) {
+        node->left = deleteNode(node->left, points, id);
+    } else if (comesBefore(node->score, node->gameID, points, id)) {
+        node->right = deleteNode(node->right, points, id);
+    } else {
+        if (node->left == NULL) {
+            TreeNode *temp = node->right;
+            delete node;
+            return temp;
+        }
+        if (node->right == NULL) {
+            TreeNode *temp = node->left;
+            delete node;
+            return temp;
+        }
+        TreeNode *successor = findMin(node->right);
+        node->score = successor->score;
+        node->gameID = successor->gameID;
+        node->right = deleteNode(node->right, successor->score, successor->gameID);
+    }
+    return node;
+}
+int height(TreeNode *node) {
+    if (node == NULL)
+        return 0;
+
+    int leftHeight = height(node->left);
+    int rightHeight = height(node->right);
+    if (leftHeight > rightHeight)
+        return leftHeight + 1;
+    return rightHeight + 1;
+}
+void saveGameResult(bool won) {
+    int id = nextGameID++;
+    insertRecord(id, score, shotsTaken, won);
+    root = insertNode(root, score, id);
+    cout << "\nGame saved successfully!\n";
+    cout << "Game ID: " << id << endl;
+    cout << "Final score: " << score << endl;
+}
+bool shootBubble(int row, int col) {
+    if (!gameActive) {
+        cout << "Start a game first!\n";
+        return false;
+    }
+    if (!isValidCell(row, col) || !isEmpty(row, col)) {
+        cout << "Invalid position!\n";
+        return false;
+    }
+    push();
+    placeBubble(row, col, currentBubble);
+    shotsTaken++;
+    cout << "Bubble placed: " << currentBubble << endl;
+    processMatches(row, col);
+    currentBubble = dequeue();
+    if (currentBubble == -1) {
+        currentBubble = generateRandomBubble();
+    }
+    enqueue(generateRandomBubble());
+    return true;
+}
+void startGame() {
+    initializeBoard();
+    initializeQueue();
+
+    initializeStack();
+    resetScore();
+    shotsTaken = 0;
+    currentBubble = generateRandomBubble();
+    gameActive = true;
+    cout << "\nNew game started!\n";
+    cout << "Current bubble: " << currentBubble << endl;
+}
+void restartGame() { startGame(); }
+void clearRecords() {
+    while (head != NULL) {
+        GameRecord *temp = head;
+        head = head->next;
+        delete temp;
+    }
+}
+void clearTree(TreeNode *node) {
+    if (node == NULL)
+        return;
+    clearTree(node->left);
+    clearTree(node->right);
+    delete node;
+}
+int main() {
+    srand(time(0));
+    int choice;
+    do {
+        cout << "\n========== BUBBLE SHOOTER ==========\n";
+        cout << "1. Start New Game\n";
+        cout << "2. Display Board\n";
+        cout << "3. Shoot Bubble\n";
+        cout << "4. Undo Move\n";
+        cout << "5. Show Upcoming Bubbles\n";
+        cout << "6. Show Game History\n";
+        cout << "7. Sort Game History\n";
+        cout << "8. Search Game Record\n";
+
+        cout << "9. Delete Game Record\n";
+        cout << "10. Show BST Leaderboard\n";
+        cout << "11. Show Highest Score\n";
+        cout << "12. Show BST Traversals\n";
+        cout << "13. Show BST Height\n";
+        cout << "14. Exit\n";
+        cout << "\nEnter choice: ";
+        cin >> choice;
+        switch (choice) {
+        case 1:
+            if (gameActive) {
+                cout << "Finish or restart the current game first!\n";
+            } else {
+                startGame();
+            }
+            break;
+        case 2:
+            if (gameActive)
+                displayBoard();
+            else
+                cout << "No active game!\n";
+            break;
+        case 3: {
+            if (!gameActive) {
+                cout << "Start a game first!\n";
+                break;
+            }
+            displayBoard();
+            cout << "Current bubble: " << currentBubble << endl;
+            int row, col;
+            cout << "Enter target row: ";
+            cin >> row;
+            cout << "Enter target column: ";
+            cin >> col;
+            if (shootBubble(row, col)) {
+                cout << "Shots: " << shotsTaken << endl;
+                cout << "Score: " << score << endl;
+
+                if (checkWin()) {
+                    cout << "Congratulations! You won!\n";
+                    saveGameResult(true);
+                    gameActive = false;
+                } else if (checkLose()) {
+                    cout << "Game Over! You lost!\n";
+                    saveGameResult(false);
+                    gameActive = false;
+                }
+            }
+            break;
+        }
+        case 4:
+            undoMove();
+            break;
+        case 5:
+            displayQueue();
+            break;
+        case 6:
+            displayRecords();
+            break;
+        case 7:
+            sortRecords();
+            displayRecords();
+            break;
+        case 8: {
+            int id;
+            cout << "Enter Game ID: ";
+            cin >> id;
+            GameRecord *result = searchRecord(id);
+            if (result != NULL) {
+                cout << "Score: " << result->score << endl;
+                cout << "Shots: " << result->shots << endl;
+                cout << "Result: " << (result->won ? "Win" : "Loss") << endl;
+            } else {
+                cout << "Record not found!\n";
+            }
+
+            break;
+        }
+        case 9: {
+            int id;
+            cout << "Enter Game ID to delete: ";
+            cin >> id;
+            GameRecord *result = searchRecord(id);
+            if (result != NULL) {
+                root = deleteNode(root, result->score, result->gameID);
+                deleteRecord(id);
+            } else {
+                cout << "Record not found!\n";
+            }
+            break;
+        }
+        case 10:
+            cout << "\n========== LEADERBOARD ==========\n";
+            inorder(root);
+            break;
+        case 11: {
+            TreeNode *highest = findMax(root);
+            if (highest != NULL) {
+                cout << "Highest score: " << highest->score << endl;
+            } else {
+                cout << "No scores available!\n";
+            }
+            break;
+        }
+        case 12:
+            cout << "Preorder: ";
+            preorder(root);
+            cout << "\nPostorder: ";
+            postorder(root);
+            cout << "\nInorder: ";
+            inorder(root);
+            break;
+
+        case 13:
+            cout << "BST Height: " << height(root) << endl;
+            break;
+        case 14:
+            cout << "Exiting game...\n";
+            break;
+        default:
+            cout << "Invalid choice!\n";
+        }
+    } while (choice != 14);
+    clearRecords();
+    clearTree(root);
+    return 0;
+}
